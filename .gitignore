@@ -1,0 +1,31 @@
+# ===== 依赖 / 缓存 =====
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# ===== 大合成文件 / 数据产物（按需自行生成，不入库）=====
+**/candidate_edges.json
+**/sparse_graph_cache.json
+**/edge_verification_cache/
+**/evaluation_results*.json
+**/queries_llm_filter*.json
+**/*_join_relationship_gt.csv
+
+# ===== 本地日志 / 临时 =====
+*.log
+.backup/
+ENV_INFO.txt
+IMPORT_TEST.log
+SAMPLE_INFO.txt
+RUN_TESTMODE.log
+
+# ===== 模型权重 / 密钥（绝不入库）=====
+*.pt
+*.bin
+*.ckpt
+*.safetensors
+.env
+**/api_key*
+**/*_key*.json
