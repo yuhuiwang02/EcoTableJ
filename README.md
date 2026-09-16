@@ -34,7 +34,7 @@ The repository includes five core benchmarks featuring real-world industrial dat
 ## 🛠️ Requirements
 
 * **Environment**: Python 3.8+
-* **Backends**: 
-    * PLMs: 
-    * LLMs: 
-* **Required Libraries**: 
+* **Backends**:
+    * PLMs:
+    * LLMs:
+* **Required Libraries**:
