@@ -21,16 +21,16 @@ from tqdm import tqdm
 from itertools import combinations
 
 
-from utils.load_file import (
+from .load_file import (
     normalize_str, extract_table_name,
     load_json_data, build_global_graph, load_ground_truth,
     find_k_shortest_paths, calculate_path_weight,
     prune_paths_global
 )
 
-from utils.llm_verifier import LLMVerifier
-from utils.edge_validator import EdgeValidator
-from utils.tree_process import steiner_tree_2approx
+from .llm_verifier import LLMVerifier
+from .edge_validator import EdgeValidator
+from .tree_process import steiner_tree_2approx
 
 
 def convert_networkx_to_adjacency_list(graph: nx.Graph) -> Dict:
@@ -548,7 +548,7 @@ def evaluate_all_queries(queries: List[List[str]],
             result = edge_validator.validate_edge(table1, table2, candidate_pairs, is_critical)
             verified_edges[edge_key] = result
 
-            if edge_validator.llm_verifier.test_mode:
+            if edge_validator.llm_verifier.test_mode and not edge_validator.llm_verifier.mock_mode:
                 print(f"\n{'='*80}")
                 print("✓ Test mode: Completed verification of one edge")
                 print(f"{'='*80}")
@@ -764,6 +764,7 @@ def run_join_evaluation(
     graph_cache: str = 'sparse_graph_cache.json',
     verbose: bool = False,
     test_mode: bool = False,
+    mock_mode: bool = False,
     overwrite: bool = False
 ) -> Dict:
     """
@@ -819,8 +820,9 @@ def run_join_evaluation(
     print("\n[Step 5.5/6] Extracting candidate column pairs...")
     candidate_pairs_dict = extract_candidate_pairs_from_json(json_data, edge_details)
 
-    # Get prompt template path
-    utils_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils')
+    # Get prompt template path (join_evaluation.py lives in src/utils, so prompt.txt
+    # is in the same directory as this file).
+    utils_dir = os.path.dirname(os.path.abspath(__file__))
     prompt_template_path = os.path.join(utils_dir, 'prompt.txt')
 
     llm_verifier = LLMVerifier(
@@ -828,7 +830,8 @@ def run_join_evaluation(
         model=model,
         sample_rows=sample_rows,
         prompt_template_path=prompt_template_path,
-        test_mode=test_mode
+        test_mode=test_mode,
+        mock_mode=mock_mode
     )
 
     edge_validator = EdgeValidator(
@@ -905,6 +908,9 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true', help="Verbose output")
     parser.add_argument('--test_mode', action='store_true',
                        help="Test mode: only verify one edge and output prompt, without calling LLM API")
+    parser.add_argument('--mock_mode', action='store_true',
+                       help="Mock mode: run the FULL pipeline but return all edges as VALID "
+                            "without calling LLM API (for smoke-testing the flow when no key is available)")
     parser.add_argument('--overwrite', action='store_true',
                        help="Overwrite mode: ignore all caches, force re-verification of all edges")
 
@@ -927,6 +933,7 @@ def main():
             graph_cache=args.graph_cache,
             verbose=args.verbose,
             test_mode=args.test_mode,
+            mock_mode=args.mock_mode,
             overwrite=args.overwrite
         )
     except Exception as e:

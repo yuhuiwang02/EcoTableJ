@@ -719,7 +719,7 @@ def main():
     csv_dataset_root = ''
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
-    model_path = ''
+    model_path = 'microsoft/deberta-v3-large'
 
     train_data, val_data, test_data, train_table_pool, test_table_pool = load_data_with_global_pool(
         train_file, test_file, use_all_train_data=True, train_ratio=0.9,

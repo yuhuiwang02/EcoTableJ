@@ -1,7 +1,14 @@
 import os
 import pandas as pd
 import numpy as np
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# Only pin to GPU 0 when a CUDA device is actually available.
+if os.environ.get("CUDA_VISIBLE_DEVICES") is None:
+    try:
+        import torch
+        if torch.cuda.is_available():
+            os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    except Exception:
+        pass
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 import torch
 import torch.nn as nn
@@ -202,14 +209,15 @@ class DeepJoinClassifier:
         Args:
             model_name: Pre-trained language model name, default is MPNet
         """
-        # Try to load local model
+        # Try to load local model, fall back to HuggingFace
         local_model_path = '/home/zhaohangyu/EcoTable/all-mpnet-base-v2-local'
+        hf_model_name = 'all-mpnet-base-v2'
         try:
             self.model = SentenceTransformer(local_model_path, device=device)
             logger.info(f"Loaded local model: {local_model_path}")
         except Exception:
-            logger.warning("Failed to load local model, loading from HuggingFace")
-            self.model = SentenceTransformer(local_model_path, device=device)
+            logger.warning(f"Failed to load local model {local_model_path}, loading from HuggingFace: {hf_model_name}")
+            self.model = SentenceTransformer(hf_model_name, device=device)
 
         # Set maximum sequence length
         self.max_seq_length = 384

@@ -121,7 +121,7 @@ class EdgeValidator:
         Returns:
             Set of critical edge tuples
         """
-        from testTrainQuality_new import find_k_shortest_paths, path_to_edges, extract_table_name
+        from .load_file import find_k_shortest_paths, path_to_edges, extract_table_name
         from itertools import combinations
 
         # Build subgraph from edge list

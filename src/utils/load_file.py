@@ -485,19 +485,36 @@ def load_ground_truth(csv_path, verbose=False):
                 folder1 = extract_folder_name(t1_path)
                 folder2 = extract_folder_name(t2_path)
 
+                # Determine the base table name. Original EcoTable GT files use a
+                # "<base_table>_normal/<subtable>" path layout; some datasets ship
+                # plain table names without a folder prefix. Fall back gracefully.
                 if folder1:
                     base_name = folder1.replace('_normal', '')
                     base_table_names.add(base_name)
-
-                if folder2:
-                    base_name = folder2.replace('_normal', '')
+                else:
+                    base_name = t1
                     base_table_names.add(base_name)
 
-                if folder1 and folder1 == folder2:
+                if folder2:
+                    base_table_names.add(folder2.replace('_normal', ''))
+                else:
+                    base_table_names.add(t2)
+
+                # Only edges whose two tables share the same base table are GT edges.
+                same_base = (
+                    (folder1 and folder1 == folder2)
+                    or (not folder1 and not folder2)  # plain table names: always same base
+                )
+                if same_base:
                     edge = tuple(sorted([t1, t2]))
                     gt_edges.add(edge)
 
-                    base_name = folder1.replace('_normal', '')
+                    if folder1 and folder1 == folder2:
+                        base_name = folder1.replace('_normal', '')
+                    else:
+                        # Plain table names: attribute the edge to its first table
+                        # so the per-base-table hit-rate stats still have data.
+                        base_name = t1
                     gt_edges_by_basetable[base_name].add(edge)
 
                     if verbose:

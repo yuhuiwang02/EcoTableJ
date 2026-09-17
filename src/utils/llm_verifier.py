@@ -21,8 +21,9 @@ class LLMVerifier:
                  sample_rows: int = 10,
                  custom_prompts: Dict[str, str] = None,
                  prompt_template_path: str = None,
-                 base_url: str = "https://www.dmxapi.com/v1",
-                 test_mode: bool = False):
+                 base_url: str = "https://api.openai.com/v1",
+                 test_mode: bool = False,
+                 mock_mode: bool = False):
         """
         Initialize LLM verifier
 
@@ -37,15 +38,18 @@ class LLMVerifier:
             prompt_template_path: Prompt template file path (for phase1 verification)
             base_url: API endpoint address
             test_mode: Test mode, only generate prompts without calling LLM
+            mock_mode: Mock mode, returns "all valid" without calling LLM (used to
+                       exercise the full pipeline when no API key is available)
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
         self.sample_rows = sample_rows
+        self.mock_mode = mock_mode
         self.test_mode = test_mode
         self.base_url = base_url
 
         # Initialize OpenAI client
-        if not self.test_mode:
+        if not self.test_mode and not self.mock_mode:
             self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         else:
             self.client = None
@@ -69,6 +73,8 @@ class LLMVerifier:
 
         if self.test_mode:
             print(f"[LLM] ⚠️  Test mode enabled - Will only generate prompts without calling LLM API")
+        if self.mock_mode:
+            print(f"[LLM] 🤖 Mock mode enabled - All edges will be returned as VALID without calling LLM API")
 
         # Conversation history management (each edge has its own conversation)
         self.conversations = {}  # {edge_key: [messages]}
@@ -325,24 +331,25 @@ class LLMVerifier:
         self._init_conversation(edge_key, system_prompt)
 
         # Test mode: Only output prompt without calling LLM
-        if self.test_mode:
-            print("\n" + "="*80)
-            print("【Test Mode】Phase 1 Prompt")
-            print("="*80)
-            print(f"\n[System Prompt]")
-            print(system_prompt)
-            print(f"\n[User Prompt]")
-            print(prompt)
-            print("="*80 + "\n")
+        if self.test_mode or self.mock_mode:
+            if self.test_mode:
+                print("\n" + "="*80)
+                print("【Test Mode】Phase 1 Prompt")
+                print("="*80)
+                print(f"\n[System Prompt]")
+                print(system_prompt)
+                print(f"\n[User Prompt]")
+                print(prompt)
+                print("="*80 + "\n")
 
-            # Return mock result (select all candidate pairs for testing Phase2)
+            # Mock result (select all candidate pairs for Phase2)
             mock_selected_pairs = []
             for pair in candidate_pairs:
                 mock_selected_pairs.append(f"Table1.{pair['column1']} <-> Table2.{pair['column2']}")
 
             return {
                 'selected_pairs': mock_selected_pairs,
-                'reason': '[Test Mode] Mock selection of all candidate pairs',
+                'reason': '[Mock Mode] Mock selection of all candidate pairs' if self.mock_mode else '[Test Mode] Mock selection of all candidate pairs',
                 'tokens': 0,
                 'input_tokens': 0,
                 'output_tokens': 0,
@@ -471,19 +478,20 @@ class LLMVerifier:
 {column_data}"""
 
             # Test mode: Only output prompt without calling LLM
-            if self.test_mode:
-                print("\n" + "="*80)
-                print(f"【Test Mode】Phase 2 Prompt - Column pair {i+1}/{len(column_pairs)}: {col1} <-> {col2}")
-                print("="*80)
-                print(prompt)
-                print("="*80 + "\n")
+            if self.test_mode or self.mock_mode:
+                if self.test_mode:
+                    print("\n" + "="*80)
+                    print(f"【Test Mode】Phase 2 Prompt - Column pair {i+1}/{len(column_pairs)}: {col1} <-> {col2}")
+                    print("="*80)
+                    print(prompt)
+                    print("="*80 + "\n")
 
                 # Mock result: Assume all column pairs are joinable
-                reasoning[f"{col1}<->{col2}"] = '[Test Mode] Mock joinable'
+                reasoning[f"{col1}<->{col2}"] = '[Mock Mode] Mock joinable' if self.mock_mode else '[Test Mode] Mock joinable'
                 valid_pairs.append({
                     'column1': col1,
                     'column2': col2,
-                    'reason': '[Test Mode] Mock joinable'
+                    'reason': reasoning[f"{col1}<->{col2}"]
                 })
                 continue
 
