@@ -12,17 +12,17 @@ from typing import List, Dict, Tuple, Optional
 from pathlib import Path
 
 # Import components from individual scripts
-from .utils.schema_linking_DL_crossencoder import (
+from .table_identification.schema_linking_DL_crossencoder import (
     CrossEncoderSchemaLinker,
     CrossEncoderTrainer,
     GlobalTablePool,
     load_data_with_global_pool
 )
-from .utils.LLM_Filter_nyc import LLMTableFilter, load_all_table_columns
-from .utils.DeepJoin import DeepJoinClassify, load_tables
-from .utils.join_evaluation import run_join_evaluation
-from .utils.table_converter_interface import TableNameConverter
-from .utils.transform_agent_interface import run_transform_agent, prepare_duckdb_from_tables
+from .table_identification.LLM_Filter_nyc import LLMTableFilter, load_all_table_columns
+from .graph_validation.DeepJoin import DeepJoinClassify, load_tables
+from .graph_validation.join_evaluation import run_join_evaluation
+from .table_identification.table_converter_interface import TableNameConverter
+from .table_transformation.transform_agent_interface import run_transform_agent, prepare_duckdb_from_tables
 
 
 # ========================================
@@ -94,7 +94,7 @@ async def llm_filter_inference(
     column_info_dict: Dict[str, List[str]],
     api_key: str,
     model: str = "gpt-4o",
-    base_url: Optional[str] = None,
+    base_url: Optional[str] = "https://www.dmxapi.com/v1",
     top_n_candidates: int = 30
 ) -> List[Dict]:
     """
@@ -185,7 +185,7 @@ async def run_ecotable_pipeline(
     # LLM Filter parameters
     llm_api_key: str = "",
     llm_model: str = "gpt-4o",
-    llm_base_url: Optional[str] = None,
+    llm_base_url: Optional[str] = "https://www.dmxapi.com/v1",
     column_stats_file: str = None,
 
     # DeepJoin parameters

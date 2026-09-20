@@ -1,0 +1,91 @@
+{
+    "_comment": "EcoTableJ experiment configuration template — aligned with paper architecture",
+
+    "paths": {
+        "data_root": "data/benchmarks",
+        "training_table_identification": "data/training/stage1/trainDataForStage1.json",
+        "training_graph_validation": "data/training/stage2/trainDataForLayer2.csv",
+        "queries": "data/queries.json",
+        "output_dir": "outputs"
+    },
+
+    "table_identification": {
+        "_comment": "Stage 1: PLM coarse filtering (DeBERTa CrossEncoder) + LLM fine-grained filtering",
+        "schema_linking": {
+            "model_name": "microsoft/deberta-v3-large",
+            "train_file": "data/training/stage1/trainDataForStage1.json",
+            "test_file": "",
+            "csv_dataset_root": "data/benchmarks/NYC",
+            "batch_size": 4,
+            "learning_rate": 5e-6,
+            "num_epochs": 15,
+            "max_length": 512,
+            "neg_sample_size": 7,
+            "accumulation_steps": 8,
+            "save_dir": "outputs/table_identification_checkpoints",
+            "device": "cuda",
+            "gpu_id": "0"
+        },
+        "llm_filter": {
+            "model": "gpt-4o",
+            "api_key_env": "OPENAI_API_KEY",
+            "base_url": "https://www.dmxapi.com/v1",
+            "top_n_candidates": 30
+        }
+    },
+
+    "graph_validation": {
+        "_comment": "Stage 2: DeepJoin join prediction + Steiner Tree search + LLM edge verification",
+        "deepjoin": {
+            "training_data": "data/training/stage2/trainDataForLayer2.csv",
+            "model_dir": "outputs/graph_validation_checkpoints",
+            "top_k": 6
+        },
+        "join_evaluation": {
+            "sample_rows": 5,
+            "top_k_paths": 10,
+            "max_path_length": 100,
+            "t_spanner": 1.1
+        }
+    },
+
+    "table_transformation": {
+        "_comment": "Stage 3: ReAct-style transform agent for data transformation",
+        "max_iterations": 10,
+        "max_workers": 8,
+        "test_mode": false
+    },
+
+    "datasets": {
+        "ad": {
+            "tables_dir": "data/benchmarks/ad/tables",
+            "schema_linking_gt": "data/benchmarks/ad/Ads_schema_linking_gt.json",
+            "join_relationship_gt": "data/benchmarks/ad/Ads_join_relationship_gt.csv",
+            "execution_answer_gt": "data/benchmarks/ad/Ads_execution_answer_gt.json"
+        },
+        "business": {
+            "tables_dir": "data/benchmarks/business/tables",
+            "schema_linking_gt": "data/benchmarks/business/Business_schema_linking_gt.json",
+            "join_relationship_gt": "data/benchmarks/business/Business_join_relationship_gt.csv",
+            "execution_answer_gt": "data/benchmarks/business/Business_execution_answer_gt.json"
+        },
+        "engagement": {
+            "tables_dir": "data/benchmarks/engagement/tables",
+            "schema_linking_gt": "data/benchmarks/engagement/Engagement_schema_linking_gt.json",
+            "join_relationship_gt": "data/benchmarks/engagement/Engagement_join_relationship_gt.csv",
+            "execution_answer_gt": "data/benchmarks/engagement/Engagement_execution_answer_gt.json"
+        },
+        "platform": {
+            "tables_dir": "data/benchmarks/platform/tables",
+            "schema_linking_gt": "data/benchmarks/platform/Platform_schema_linking_gt.json",
+            "join_relationship_gt": "data/benchmarks/platform/Platform_join_relationship_gt.csv",
+            "execution_answer_gt": "data/benchmarks/platform/Platform_execution_answer_gt.json"
+        },
+        "NYC": {
+            "tables_dir": "data/benchmarks/NYC",
+            "schema_linking_gt": null,
+            "join_relationship_gt": null,
+            "execution_answer_gt": null
+        }
+    }
+}
