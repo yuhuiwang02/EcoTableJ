@@ -118,16 +118,52 @@ def process_single_edge(edge_idx, edge, edge_duckdb_path, agent, args, output_di
 
     source_table = edge["source"]
     target_table = edge["target"]
-    join_columns = edge["join_columns"]
+    join_columns = edge.get("join_columns", [])
     weight = edge.get("weight", 0)
-
-    logger.info(f"[Edge {edge_idx}] {source_table} <-> {target_table} ({len(join_columns)} pairs)")
 
     edge_output_dir = os.path.join(output_dir, get_edge_folder_name(source_table, target_table))
     os.makedirs(edge_output_dir, exist_ok=True)
 
+    # If no join_columns provided, discover them via LLM
+    discovery_result = None
+    if not join_columns:
+        logger.info(f"[Edge {edge_idx}] {source_table} <-> {target_table} (no join_columns, discovering...)")
+        if not args.test_mode:
+            discovery_result = agent.discover_join_columns(
+                duckdb_path=edge_duckdb_path,
+                table1=source_table,
+                table2=target_table,
+                output_dir=edge_output_dir,
+            )
+            join_columns = discovery_result.get('selected_pairs', [])
+            edge_llm_ms = discovery_result.get('llm_latency_ms', 0.0)
+
+            if not discovery_result.get('same_scope', True):
+                logger.info(f"[Edge {edge_idx}] Not same scope, skipping transformation")
+                edge_output = {
+                    "source": source_table,
+                    "target": target_table,
+                    "weight": weight,
+                    "join_columns": [],
+                    "discovery": discovery_result,
+                    "results": [],
+                    "not_same_scope": True,
+                }
+                result_path = os.path.join(edge_output_dir, "result.json")
+                with open(result_path, "w", encoding="utf-8") as f:
+                    json.dump(edge_output, f, indent=2, ensure_ascii=False)
+                elapsed = time.time() - start
+                return edge_output, elapsed, edge_llm_ms / 1000.0
+        else:
+            logger.info(f"[Edge {edge_idx}] TEST MODE: skipping join column discovery")
+            join_columns = []
+
+    logger.info(f"[Edge {edge_idx}] {source_table} <-> {target_table} ({len(join_columns)} pairs)")
+
     edge_results = []
-    edge_llm_ms = 0.0
+    # Preserve discovery LLM time if join columns were discovered
+    discovery_llm_ms = discovery_result.get('llm_latency_ms', 0.0) if discovery_result else 0.0
+    edge_llm_ms = discovery_llm_ms
     for pair_idx, col_pair in enumerate(join_columns):
         if not isinstance(col_pair, (list, tuple)) or len(col_pair) != 2:
             logger.warning(f"[Edge {edge_idx}] Invalid pair: {col_pair}, skipping")
@@ -171,8 +207,10 @@ def process_single_edge(edge_idx, edge, edge_duckdb_path, agent, args, output_di
         "target": target_table,
         "weight": weight,
         "join_columns": join_columns,
-        "results": edge_results
+        "results": edge_results,
     }
+    if discovery_result:
+        edge_output["discovery"] = discovery_result
 
     # Save edge result
     result_path = os.path.join(edge_output_dir, "result.json")
@@ -283,8 +321,9 @@ def run(args: argparse.Namespace) -> None:
 
     edges = graph_data.get("graph", {}).get("edges", [])
     metadata = graph_data.get("metadata", {})
-    target_edges = [e for e in edges if "join_columns" in e]
-    logger.info(f"Graph: {len(edges)} edges, {len(target_edges)} with join_columns")
+    target_edges = edges  # Process all edges; those without join_columns will have them discovered
+    n_with_jc = sum(1 for e in edges if e.get("join_columns"))
+    logger.info(f"Graph: {len(edges)} edges ({n_with_jc} with join_columns, {len(edges) - n_with_jc} need discovery)")
 
     # Optional: filter to only edges referenced in evaluation results
     if args.eval_file:
@@ -488,6 +527,11 @@ def run(args: argparse.Namespace) -> None:
             # Merge modified tables back to main DuckDB
             for idx in edges_to_process:
                 if all_results[idx] and "error" not in all_results[idx]:
+                    # Skip edges that returned early (not_same_scope, no DuckDB copy)
+                    if all_results[idx].get("not_same_scope"):
+                        continue
+                    if idx not in edge_db_paths or not os.path.exists(edge_db_paths.get(idx, '')):
+                        continue
                     try:
                         merge_tables_from_edge_db(
                             idx, target_edges[idx],

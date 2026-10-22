@@ -1,12 +1,20 @@
 """
-Join Evaluation Script with LLM-based Verification
+Join Evaluation — Main Orchestrator
 
-This script evaluates join relationships using:
-1. Merging user_selected_nodes with containment relationships
-2. Building subgraphs for merged sub_tables
-3. LLM-based edge verification (coarse + fine)
-4. Voting mechanism for critical edges
-5. Steiner tree generation for queries
+This module provides the core graph-level functions used by both verification methods:
+  - build_steiner_for_query(): Build Steiner tree for a single query
+  - convert_networkx_to_adjacency_list(): Graph format conversion
+  - save_pruned_graph() / load_pruned_graph(): Pruned graph I/O
+  - run_join_evaluation(): Full pipeline (per-edge method, legacy)
+
+Verification methods are organized in subpackages:
+  - per_edge/: Per-edge LLM verification (Phase1 + Phase2 + critical voting)
+  - cluster/: Cluster-based verification (Algorithm 1 + cross-cluster voting)
+    (main logic in scripts/run_iterative_validation.py)
+
+Shared utilities:
+  - common/load_file: Graph loading, path finding, pruning
+  - common/tree_process: Steiner tree 2-approximation algorithm
 """
 
 import json
@@ -21,16 +29,16 @@ from tqdm import tqdm
 from itertools import combinations
 
 
-from .load_file import (
+from .common.load_file import (
     normalize_str, extract_table_name,
     load_json_data, build_global_graph, load_ground_truth,
     find_k_shortest_paths, calculate_path_weight,
     prune_paths_global
 )
 
-from .llm_verifier import LLMVerifier
-from .edge_validator import EdgeValidator
-from .tree_process import steiner_tree_2approx
+from .per_edge.llm_verifier import LLMVerifier
+from .per_edge.edge_validator import EdgeValidator
+from .common.tree_process import steiner_tree_2approx
 
 
 def convert_networkx_to_adjacency_list(graph: nx.Graph) -> Dict:
@@ -374,7 +382,9 @@ def build_sparse_graph_from_queries(queries: List[List[str]],
 
 
 def build_steiner_for_query(required_tables: List[str],
-                            sparse_graph: nx.Graph) -> Tuple[Optional[List[Tuple[str, str]]], List[str], str]:
+                            sparse_graph: nx.Graph,
+                            adj_list: Dict = None,
+                            components: List = None) -> Tuple[Optional[List[Tuple[str, str]]], List[str], str]:
     """
     Build Steiner tree for a single query (pure function, no verification)
 
@@ -384,6 +394,8 @@ def build_steiner_for_query(required_tables: List[str],
     Args:
         required_tables: List of required table names for the query
         sparse_graph: Sparse graph
+        adj_list: Pre-computed adjacency list (optional, avoids repeated conversion for large graphs)
+        components: Pre-computed connected components (optional, avoids repeated computation)
 
     Returns:
         (steiner_edges, covered_tables, status)
@@ -398,7 +410,8 @@ def build_steiner_for_query(required_tables: List[str],
     if len(tables_in_graph) < 2:
         return None, required_tables, 'insufficient_tables'
 
-    components = list(nx.connected_components(sparse_graph))
+    if components is None:
+        components = list(nx.connected_components(sparse_graph))
     best_tables = []
     for comp in components:
         tables_in_comp = [t for t in tables_in_graph if t in comp]
@@ -411,7 +424,8 @@ def build_steiner_for_query(required_tables: List[str],
     is_partial = len(best_tables) < len(required_tables)
 
     try:
-        adj_list = convert_networkx_to_adjacency_list(sparse_graph)
+        if adj_list is None:
+            adj_list = convert_networkx_to_adjacency_list(sparse_graph)
         steiner_result = steiner_tree_2approx(adj_list, best_tables)
         steiner_edges = []
         if steiner_result and 'edges' in steiner_result:

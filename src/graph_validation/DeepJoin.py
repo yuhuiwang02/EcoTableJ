@@ -228,6 +228,28 @@ class DeepJoinClassifier:
         self.logger = logging.getLogger('DeepJoinClassifier')
         self.column_embeddings = {}  # Store column embeddings
 
+    @staticmethod
+    def _get_display_id(table: Table) -> str:
+        """
+        Get a human-readable display ID for the table.
+        For virtual Steiner-tree nodes named 'node_X', replace with
+        '<dataset_prefix>_node_X' so the embedding captures dataset context.
+        unique_id format: '<folder_name>/<csv_stem>'  e.g. 'DatasetA_normal/node_1'
+        """
+        uid = table.unique_id  # e.g. "DatasetA_normal/node_1"
+        if '/' in uid:
+            folder, stem = uid.rsplit('/', 1)
+            if stem.startswith('node_'):
+                # Strip trailing '_normal' / '_category' suffix from folder name
+                # to get a cleaner dataset prefix
+                dataset_prefix = folder
+                for suffix in ('_normal', '_category', '_clean'):
+                    if dataset_prefix.endswith(suffix):
+                        dataset_prefix = dataset_prefix[:-len(suffix)]
+                        break
+                return f"{dataset_prefix} {stem}"
+        return uid
+
     def _column_to_text(self, table: Table, column_name: str, pattern='title-colname-stat-col') -> str:
         """
         Convert column to text sequence
@@ -260,12 +282,12 @@ class DeepJoinClassifier:
         elif pattern == 'colname-stat-col':
             return f"{column_name} contains {n} values ({max_len}, {min_len}, {avg_len:.1f}): {', '.join(sampled_values)}"
         elif pattern == 'title-colname-col':
-            return f"{table.table_name}. {column_name}: {', '.join(sampled_values)}"
+            return f"{self._get_display_id(table)}. {column_name}: {', '.join(sampled_values)}"
         elif pattern == 'title-colname-stat-col':
-            return f"{table.unique_id}. {column_name} contains {n} values ({max_len}, {min_len}, {avg_len:.1f}): {', '.join(sampled_values)}"
+            return f"{self._get_display_id(table)}. {column_name} contains {n} values ({max_len}, {min_len}, {avg_len:.1f}): {', '.join(sampled_values)}"
         else:
             # Default to best pattern
-            return f"{table.unique_id}. {column_name} contains {n} values ({max_len}, {min_len}, {avg_len:.1f}): {', '.join(sampled_values)}"
+            return f"{self._get_display_id(table)}. {column_name} contains {n} values ({max_len}, {min_len}, {avg_len:.1f}): {', '.join(sampled_values)}"
 
     def _sample_frequent_values(self, column: List, max_tokens=None) -> List[str]:
         """

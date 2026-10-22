@@ -31,6 +31,126 @@ def make_serializable(obj, max_depth=10, current_depth=0):
         return f"<non-serializable: {type(obj).__name__}>"
 
 
+# ── System Prompt (from technical report, enhanced with JSON constraint) ─────
+SYSTEM_PROMPT = (
+    "You are a data lake schema expert specializing in large-scale, open government "
+    "data lakes. Your role is to identify, from a pool of candidate tables retrieved "
+    "by a deep learning model, the minimal and semantically correct set of tables "
+    "required to answer a given natural language query.\n\n"
+    "You reason at the column level: a table is relevant if and only if its columns "
+    "directly supply information requested by the query. In this data lake, tables may "
+    "share naming prefixes and be organized by temporal scope or horizontal data "
+    "partitioning; your reasoning must account for both aspects.\n\n"
+    "Return valid JSON only, no markdown."
+)
+
+# ── Step 1 Prompt: Query Understanding ──────────────────────────────────────
+STEP1_PROMPT_TEMPLATE = """\
+Step 1: Query Understanding
+
+Given the following natural language query, decompose it into a structured list of \
+atomic semantic components. Each component should represent one self-contained \
+information need, such as:
+- A key entity or subject (e.g., "taxi trip", "building permit").
+- A measurable attribute or metric (e.g., "trip duration", "fare").
+- A filter or scoping condition (e.g., "yellow cab only").
+- A temporal specification (e.g., "in 2017", "FY 2018-2019").
+
+Pay particular attention to temporal references. If the query mentions a specific year, \
+fiscal year, or date range, record it explicitly, as it will be used to resolve temporal \
+ambiguity among candidate tables in the verification step.
+
+Input
+Query: {query}
+
+Output Format (JSON Only)
+{{
+    "temporal_scope": "<year / fiscal year / date range, or null>",
+    "semantic_components": [
+        "component 1: <description>",
+        "component 2: <description>"
+    ]
+}}"""
+
+# ── Step 2 Prompt: Schema Reasoning and Alignment ──────────────────────────
+STEP2_PROMPT_TEMPLATE = """\
+Step 2: Schema Reasoning and Alignment
+
+You are given the original query, its decomposed semantic components (including \
+temporal scope), and a ranked list of candidate tables from the data lake. Each table \
+entry includes its name and a sample of its column names.
+
+For each candidate table, reason step-by-step to determine whether the table directly \
+contributes at least one column that satisfies a semantic component of the query. \
+Apply the following principles in order:
+
+- Column-Level Matching: A table is relevant only if its columns directly provide \
+data requested by the query. Do not rely on table names alone.
+- Temporal Scope Consistency: If a temporal scope exists, discard tables whose names \
+encode a different year or fiscal year, even if schemas match.
+- Partition-Complete Selection: In this data lake, large datasets are horizontally \
+partitioned into sub-tables that share a common base name with a numeric suffix \
+(e.g., records, records_1, records_2). These sub-tables hold disjoint rows of the \
+same logical table — they are NOT duplicates. A query that needs data from one \
+partition almost always needs data from ALL partitions of that table, because the \
+required rows could reside in any partition. \
+RULE: Once you decide to keep ANY table whose name follows the pattern <base> or \
+<base>_N, you MUST also keep EVERY other candidate table whose name matches <base> \
+or <base>_M (where M is any number). Do NOT evaluate partitions independently — \
+include the entire partition family as a unit.
+- Dataset Coherence: Each candidate table name follows the pattern \
+`<DatasetName>_<subtable>`. The Dataset field shown for each candidate identifies \
+which parent dataset it belongs to. If the query explicitly references a specific \
+dataset by name (e.g., "DOB NOW Job Application Filings", "2019 DOE High School \
+Directory"), you MUST strongly prefer tables whose Dataset matches the referenced \
+dataset. Tables from a different dataset — even one with a very similar name, \
+overlapping columns, or a different year/version — should be discarded unless the \
+query clearly requires cross-dataset information. Pay special attention to: \
+(a) year/version differences in dataset names (e.g., "2018 DOE High School Directory" \
+vs "2019 DOE High School Directory"); (b) subtle naming variants (e.g., "DOB NOW: \
+Build – Job Application Filings" vs "DOB Job Application Filings"); \
+(c) historical vs current versions (e.g., "LinkNYC Kiosk Status" vs \
+"LinkNYC Kiosk Status (Historical)"). These are DIFFERENT datasets.
+- Non-Redundancy: If two tables have identical schemas and partitions, retain only \
+the one with broader coverage or the lower partition index. Do not deduplicate \
+based on naming similarity alone.
+
+Input
+Query: {query}
+Temporal Scope: {temporal_scope}
+Semantic Components: {semantic_components}
+Candidate Tables:
+{candidate_tables_with_columns}
+
+Output Format (JSON Only)
+{{
+    "table_reasoning": {{
+        "<table_name>": {{
+            "matched_components": ["component i"],
+            "matched_columns": ["col_a"],
+            "temporal_consistent": true,
+            "verdict": "keep",
+            "reason": "<one-sentence justification>"
+        }}
+    }},
+    "selected_tables": ["table_1", "table_2"]
+}}"""
+
+
+def parse_json_response(raw: str) -> dict:
+    """Parse JSON from LLM response, stripping markdown fences if present."""
+    content = raw.strip()
+    if content.startswith("```"):
+        content = content.split("```")[1]
+        if content.startswith("json"):
+            content = content[4:]
+    # Fallback: find the outermost JSON object
+    json_match = re.search(r'\{.*\}', content, re.DOTALL)
+    if json_match:
+        return json.loads(json_match.group(0))
+    return json.loads(content)
+
+
 class LLMTableFilter:
 
     def __init__(self, api_key, model="gpt-4o", base_url="https://www.dmxapi.com/v1"):
@@ -42,135 +162,138 @@ class LLMTableFilter:
 
     async def filter_candidates(self, query: str, candidates: list,
                                  column_info: dict) -> dict:
-        tables_section = ""
+        """
+        Two-step LLM filter (Paper V6 best version):
+          Step 1: Query Understanding -> temporal_scope + semantic_components
+          Step 2: Schema Reasoning    -> selected_tables (with Step 1 context)
+        """
+        global TOTAL_PROMPT_TOKENS, TOTAL_COMPLETION_TOKENS
+
+        llm_interaction = {
+            "step1_prompt": None,
+            "step1_response": None,
+            "step2_prompt": None,
+            "step2_response": None,
+            "parsed_result": None,
+            "error": None,
+            "usage": {"step1": None, "step2": None}
+        }
+
+        # ── Step 1: Query Understanding ──────────────────────────────────
+        step1_prompt = STEP1_PROMPT_TEMPLATE.format(query=query)
+        llm_interaction["step1_prompt"] = step1_prompt
+
+        try:
+            resp1 = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user",   "content": step1_prompt},
+                ],
+                temperature=0,
+                max_tokens=1024,
+            )
+            raw1 = resp1.choices[0].message.content.strip()
+            llm_interaction["step1_response"] = raw1
+
+            if resp1.usage:
+                TOTAL_PROMPT_TOKENS += resp1.usage.prompt_tokens
+                TOTAL_COMPLETION_TOKENS += resp1.usage.completion_tokens
+                llm_interaction["usage"]["step1"] = {
+                    "prompt_tokens": resp1.usage.prompt_tokens,
+                    "completion_tokens": resp1.usage.completion_tokens,
+                }
+
+            parsed1 = parse_json_response(raw1)
+            temporal_scope = parsed1.get("temporal_scope")
+            semantic_components = parsed1.get("semantic_components", [])
+
+        except Exception as e:
+            llm_interaction["error"] = f"Step1: {e}"
+            return {
+                'filtered_tables': [t for t, s in candidates[:10]],
+                'temporal_scope': 'error',
+                'summary': {},
+                'llm_interaction': llm_interaction
+            }
+
+        # ── Build candidate text with columns and Dataset field ──────────
+        cand_lines = []
         for i, (table_name, score) in enumerate(candidates[:30], 1):
             cols = list(column_info.get(table_name, {}).keys())
             cols_str = ", ".join(cols[:30])
-            tables_section += f"{i}. `{table_name}` (Score: {score:.6f})\n"
-            tables_section += f"   Columns: {cols_str}"
             if len(cols) > 30:
-                tables_section += f"... (+{len(cols) - 30} more)"
-            tables_section += "\n\n"
+                cols_str += f" ... (+{len(cols) - 30} more)"
+            # Extract dataset name from table name
+            dataset_name = table_name
+            for j, ch in enumerate(table_name):
+                if ch == '_':
+                    rest = table_name[j+1:]
+                    if rest and rest[0].islower():
+                        dataset_name = table_name[:j]
+                        break
+            cand_lines.append(
+                f"{i}. `{table_name}` (Score: {score:.6f})\n"
+                f"   Dataset: {dataset_name}\n"
+                f"   Columns: {cols_str}"
+            )
+        cand_text = "\n".join(cand_lines)
 
-        prompt = f"""# QUERY
-{query}
+        sc_str = json.dumps(semantic_components, ensure_ascii=False)
 
-# CANDIDATE TABLES
-{tables_section}
-# OPERATION 1 — Query Understanding
-Decompose the query into a structured list of atomic semantic components. Each component
-should represent one self-contained information need: a key entity, a measurable attribute,
-a filter condition, or a temporal specification.
-
-Pay particular attention to temporal references. If the query mentions a specific year,
-fiscal year, or date range, record it explicitly, as it will be used to resolve temporal
-ambiguity among candidate tables in the verification step.
-
-# OPERATION 2 — Schema Reasoning and Verification
-Using the semantic components identified above, evaluate each candidate table. For each
-table, determine whether it contains at least one column that directly satisfies a semantic
-component of the query. Apply the following principles:
-
-  Principle 1 — Column-Level Matching
-    A table is relevant only if its columns directly supply data for at least one semantic
-    component. Do not retain a table based on its name alone.
-
-  Principle 2 — Temporal Scope Consistency
-    If a temporal scope was identified, include only tables whose names or schemas are
-    consistent with that temporal scope. Exclude tables that clearly correspond to a
-    different time period, even if their schema is otherwise similar.
-
-  Principle 3 — Partition-Complete Selection
-    In this data lake, large datasets may be stored as horizontally partitioned sub-tables
-    sharing a base name with a numeric suffix (e.g., records, records_1, records_2). These
-    sub-tables are disjoint partitions, not duplicates. When any sub-table in a series is
-    relevant, examine all numbered variants present in the candidate pool independently and
-    retain each one that satisfies the column-level relevance criterion.
-
-  Principle 4 — Non-Redundancy
-    If two candidate tables are semantically identical in schema and content, retain only
-    the one with broader column coverage or the lower partition index. Do not deduplicate
-    based on naming similarity alone.
-
-# OUTPUT FORMAT
-Return valid JSON (no markdown):
-
-{{
-  "temporal_scope": "<year / fiscal year / date range, or null>",
-  "semantic_components": ["component 1", "component 2", ...],
-  "table_reasoning": {{
-    "<table_name>": {{
-      "matched_components":  ["component i"],
-      "matched_columns":     ["col_a"],
-      "temporal_consistent": true,
-      "verdict":             "keep",
-      "reason":              "<one-sentence justification>"
-    }}
-  }},
-  "selected_tables": ["table1", "table2", ...]
-}}"""
-
-        llm_interaction = {
-            "prompt": prompt,
-            "response": None,
-            "parsed_result": None,
-            "error": None,
-            "usage": None
-        }
+        # ── Step 2: Schema Reasoning (with Step 1 conversation history) ──
+        step2_prompt = STEP2_PROMPT_TEMPLATE.format(
+            query=query,
+            temporal_scope=temporal_scope if temporal_scope else "null",
+            semantic_components=sc_str,
+            candidate_tables_with_columns=cand_text,
+        )
+        llm_interaction["step2_prompt"] = step2_prompt
 
         try:
-            resp = await self.client.chat.completions.create(
+            resp2 = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system",
-                     "content": "You are a data lake schema expert. Your task is to identify "
-                                "from a set of candidate tables the minimal and semantically "
-                                "correct set required to answer a given natural language query. "
-                                "Reason at the column level: a table is relevant if and only if "
-                                "its columns directly supply information requested by the query."},
-                    {"role": "user", "content": prompt}
+                    {"role": "system",    "content": SYSTEM_PROMPT},
+                    {"role": "user",      "content": step1_prompt},
+                    {"role": "assistant", "content": raw1},
+                    {"role": "user",      "content": step2_prompt},
                 ],
                 temperature=0.1,
-                max_tokens=8000
+                max_tokens=8000,
             )
+            raw2 = resp2.choices[0].message.content.strip()
+            llm_interaction["step2_response"] = raw2
 
-            content = resp.choices[0].message.content.strip()
-            llm_interaction["response"] = content
-
-            global TOTAL_PROMPT_TOKENS, TOTAL_COMPLETION_TOKENS
-            if resp.usage:
-                TOTAL_PROMPT_TOKENS += resp.usage.prompt_tokens
-                TOTAL_COMPLETION_TOKENS += resp.usage.completion_tokens
-                llm_interaction["usage"] = {
-                    "prompt_tokens": resp.usage.prompt_tokens,
-                    "completion_tokens": resp.usage.completion_tokens,
-                    "total_tokens": resp.usage.total_tokens
+            if resp2.usage:
+                TOTAL_PROMPT_TOKENS += resp2.usage.prompt_tokens
+                TOTAL_COMPLETION_TOKENS += resp2.usage.completion_tokens
+                llm_interaction["usage"]["step2"] = {
+                    "prompt_tokens": resp2.usage.prompt_tokens,
+                    "completion_tokens": resp2.usage.completion_tokens,
                 }
 
-            content = re.sub(r'```json\s*', '', content)
-            content = re.sub(r'```\s*', '', content)
-
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
-            result = json.loads(json_match.group(0) if json_match else content)
-            llm_interaction["parsed_result"] = result
-
-            selected_tables = result.get('selected_tables', [])
+            parsed2 = parse_json_response(raw2)
+            llm_interaction["parsed_result"] = parsed2
+            selected_tables = parsed2.get('selected_tables', [])
 
             if len(selected_tables) == 0:
                 selected_tables = [t for t, s in candidates[:10]]
 
             return {
                 'filtered_tables': selected_tables,
-                'temporal_scope': result.get('temporal_scope', 'null'),
-                'summary': result.get('summary', {}),
+                'temporal_scope': temporal_scope,
+                'semantic_components': semantic_components,
+                'summary': parsed2.get('table_reasoning', {}),
                 'llm_interaction': llm_interaction
             }
 
         except Exception as e:
-            llm_interaction["error"] = str(e)
+            llm_interaction["error"] = f"Step2: {e}"
             return {
                 'filtered_tables': [t for t, s in candidates[:10]],
-                'temporal_scope': 'error',
+                'temporal_scope': temporal_scope,
+                'semantic_components': semantic_components,
                 'summary': {},
                 'llm_interaction': llm_interaction
             }

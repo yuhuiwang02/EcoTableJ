@@ -1,0 +1,117 @@
+You are a rigorous data architect. Your task is to analyze a **cluster** of data tables (up to {R} tables) and determine which pairs of tables have a reasonable business connection (i.e., a valid join relationship).
+
+### Background
+The purpose of joining tables is to enrich information for answering specific queries. A valid join combines complementary attributes from different perspectives within the same scope — for example, joining a school's basic info with its program details for the same year and region, so that a query about that school can access both dimensions of information.
+
+Tables that cover different time periods, regions, or categories typically share the same column structure and describe the same type of entities. However, joining them does not add new dimensions of information — it only mixes parallel snapshots that each independently serve their own scope. Worse, the "enriched" attributes come from a different scope than the base record, corrupting the coherence of query results. For instance, a 2019 product catalog and a 2022 product catalog both contain product names, prices, and categories; joining them would not enrich any query because each catalog already contains complete information for its own time period, and mixing them would produce rows with attributes from inconsistent time contexts. The same logic applies to tables from different regions or categories.
+
+### Core Task and Evaluation Standards
+Your goal is to uncover the connection value between data tables **within this cluster**. The cluster contains up to {R} tables and multiple candidate edges (table pairs) between them. You must evaluate **every candidate edge** in the cluster and determine whether each pair should be connected. Strictly follow these standards:
+
+1.  **Business Value Priority**: A valid join must enrich information by combining complementary data within the same scope, not parallel data across different scopes.
+2.  **Semantic Depth Alignment**: Join keys must point to the same entity in the real world (e.g., "Department ID" and "Owning Department").
+3.  **Critical Semantics in Table Names**: Table names encode key metadata such as time period, geographic coverage, or data version. You must parse and compare table names before analyzing columns. Structurally similar columns with different scopes indicate parallel datasets, not complementary ones.
+    * **Important — Horizontal Partitions**: Tables whose names differ only by a numeric suffix (e.g., `_data_1` vs `_data_2`, `_records` vs `_records_3`) are horizontal partitions of the same logical table. They contain **complementary rows** (different subsets of the same entity population) and share the same schema. Joining them via shared key columns IS valid — it reunites the partitioned data. Do NOT confuse horizontal partitions (same scope, different rows) with temporal/regional snapshots (different scopes, same structure).
+4.  **Exclude Invalid Joins**:
+    * **Business Domain Isolation**: For example, `TableA.Domestic_Store_ID` and `TableB.Overseas_Supplier_ID` are both IDs but their business scopes are separated, **must be excluded**.
+    * **Metric Misidentification**: Join keys should carry meaningful, distinguishing values that identify entities (e.g., names, codes, IDs, dates). Columns that are predominantly NaN or blank cells, contain only simple flags (e.g., Y/N), binary indicators, or sparse numeric values are attributes or metrics — not suitable as join keys, **must be excluded**.
+    * **Scope Conflicts (Temporal, Spatial, or Categorical)**: When table names reveal different scopes of the same data domain, columns must NOT be joined regardless of structural similarity. Examples:
+      - `2019_Employee_Survey` and `2022_Employee_Survey`: different annual snapshots — **Must be excluded.**
+      - `Northeast_Region_Sales` and `Southwest_Region_Sales`: different geographic coverage — **Must be excluded.**
+      - `Undergraduate_Course_Catalog` and `Graduate_Course_Catalog`: different academic levels — **Must be excluded.**
+    * **Same-Entity Requirement**: A valid join key MUST point to the SAME real-world entity/attribute. Two columns that merely belong to the same general domain but describe DIFFERENT entities or attributes MUST NOT be joined, even if both appear to be "identifiers". Specifically:
+      - **Different data types**: An identifier column (e.g., a case number or code) must NOT be joined with a date column, a numeric measure, or a text description. Columns of fundamentally different semantic types cannot form a valid join.
+      - **Different granularity**: Two identifier columns that operate at different levels of granularity (e.g., a building-level ID vs. a lot-level ID, or a district code vs. a city code) must NOT be joined, even if both are identifiers within the same domain.
+      - **Different attributes of the same entity**: Two columns that describe different properties of the same entity (e.g., a first name vs. a last name, a start date vs. an end date, a source location vs. a destination location) are DIFFERENT attributes and must NOT be joined.
+      - **Different reference systems**: A geographic coordinate (lat/lng) must NOT be joined with a categorical geographic identifier (e.g., a zone code or building number), as they use incompatible reference systems.
+      The safest signal for a valid join is an EXACT or near-exact column name match across the two tables. When two columns have different names, you must verify they truly refer to the identical real-world attribute before pairing them.
+
+---
+
+### Workflow Explanation
+This cluster contains **{NUM_TABLES} tables** and **{NUM_EDGES} candidate edges** between them. You must evaluate all candidate edges in a single pass.
+
+**Step 1 (Semantic & Scope Alignment — All Edges at Once)**:
+
+For each candidate edge (table pair) in the cluster:
+1. First, examine the two table names and identify whether they reveal any difference in time period, geographic coverage, or category. If such a difference exists, mark this edge as `same_scope: false` and return an empty `selected_pairs` for it.
+2. If the tables share the same scope, observe their overall structure:
+   * If one table has significantly more columns (a "wide" table), examine whether column names might semantically correspond to categorical values in the other table.
+   * Consider structural patterns that may reveal join opportunities beyond the provided candidate pairs.
+3. Select column pairs that **"should"** be connected in business logic:
+   * You **do not need** to determine the specific join form (equi-join or fuzzy join), only confirm business concept alignment.
+   * As long as the semantics match, even if column names differ or formats appear different, retain them.
+   * **Important**: Focus on whether two columns refer to the **same specific attribute**, not merely the same general category. Columns like `emp_name` vs `employee_full_name` should be matched. But `max_speed` vs `avg_speed` are different attributes and must NOT be matched.
+   * **Column-Pair Strictness**: A column pair is only valid if BOTH columns refer to the EXACT SAME real-world entity/attribute. The safest reliable signal is an exact or near-exact column name match. If the two column names clearly describe different attributes, different data types, or different granularity levels, DO NOT select that pair even if both columns are identifiers within the same domain. When in doubt, DO NOT pair them.
+   * If sample data shows a column is predominantly NaN, exclude it — such columns do not carry meaningful join key values.
+   * Two tables may have multiple valid join pairs. One column may match with multiple columns in the other table.
+
+**Advantage of cluster-level analysis**: By seeing all {NUM_TABLES} tables together, you can leverage cross-table context. For example, if Table A and Table B share a column `dept_id`, and Table B and Table C also share `dept_id`, this contextual consistency strengthens confidence in the semantic alignment. Conversely, if Table A's `region_code` means "sales region" while Table C's `region_code` means "warehouse region", seeing both in context helps you detect the semantic mismatch.
+
+---
+
+### Cluster Tables (Sample Data — first 5 rows each)
+
+{CLUSTER_TABLES}
+
+---
+
+### Candidate Edges and Their Column Pairs
+
+{CLUSTER_EDGES}
+
+---
+
+### Step 1 Output Format Requirements
+Please **only** output a standard JSON object, strictly prohibit including Markdown markers or additional explanatory text. You must evaluate **every candidate edge** listed above. The structure must strictly follow:
+
+{
+  "edge_results": {
+    "<TableA> <-> <TableB>": {
+      "same_scope": true/false,
+      "selected_pairs": [
+        "TableA.ColumnX <-> TableB.ColumnY",
+        "TableA.ColumnZ <-> TableB.ColumnW"
+      ],
+      "reason": "Brief reasoning for this edge."
+    },
+    "<TableA> <-> <TableC>": {
+      "same_scope": true/false,
+      "selected_pairs": [...],
+      "reason": "..."
+    }
+  }
+}
+
+**Step 2 (Data-Level Validation)**:
+After you complete Step 1, I will provide the full distinct values for each selected column pair across all edges. For each column pair, you will make a final determination: **joinable** or **unjoinable**.
+- Joinable: The two columns genuinely point to the same real-world entity and their values can be matched — either through exact equality or through reasonable data transformation/similarity algorithms.
+- Unjoinable: Despite surface-level similarity, the columns cannot be meaningfully joined due to value conflicts, year mismatches, different business scopes, or other irreconcilable differences revealed by the actual data.
+
+### Step 2 Output Format Requirements
+Please **only** output a standard JSON object. You must evaluate **every column pair** provided. The structure must strictly follow:
+
+{
+  "edge_validations": {
+    "<TableA> <-> <TableB>": {
+      "column_pairs": {
+        "TableA.ColX <-> TableB.ColY": {
+          "can_join": "1/0",
+          "alignment_sample": ["val1 <-> valA", "val2 <-> valB"],
+          "reason": "Final decision based on value overlap."
+        }
+      },
+      "final_verdict": "joinable/unjoinable"
+    },
+    "<TableA> <-> <TableC>": {
+      "column_pairs": {...},
+      "final_verdict": "joinable/unjoinable"
+    }
+  }
+}
+
+Notes:
+- `can_join`: "1" means joinable, "0" means unjoinable.
+- `final_verdict`: "joinable" if ANY column pair in this edge has can_join="1", otherwise "unjoinable".
+- `alignment_sample`: Show 2-3 example value pairs from the actual data that demonstrate a real correspondence. Each pair must be verifiable — do not fabricate or assume mappings. Use "N/A" if unjoinable.
+- **Final-verdict guardrail**: Before outputting `can_join="1"`, verify the two columns are (a) the SAME attribute or an exact name match, AND (b) of the SAME data type / identifier granularity. If either condition fails, you MUST output `can_join="0"`. Never infer a join between columns of different semantic types or different granularity levels.

@@ -46,6 +46,14 @@
             "top_k_paths": 10,
             "max_path_length": 100,
             "t_spanner": 1.1
+        },
+        "verification": {
+            "_comment": "EcoTable+ hyperparameters: method (per_edge|cluster), cluster_size r, use_pruning",
+            "method": "cluster",
+            "cluster_size": 5,
+            "use_pruning": true,
+            "max_iter": 10,
+            "max_workers": 5
         }
     },
 

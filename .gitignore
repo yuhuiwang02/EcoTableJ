@@ -12,6 +12,7 @@ venv/
 **/evaluation_results*.json
 **/queries_llm_filter*.json
 **/*_join_relationship_gt.csv
+data/pruned_graph_join_cols_version.json
 
 # ===== 本地日志 / 临时 =====
 *.log
@@ -23,6 +24,20 @@ RUN_TESTMODE.log
 
 # ===== 实验输出（按需保留，不入库）=====
 outputs/
+Eval/
+figure/
+logs/
+overleaf_project/
+docs/
+
+# ===== 本地编辑器 / 代理工具 / 临时分析脚本 =====
+.xac/
+EcoTable+.md
+*.pdf
+*.png
+analyze_*.py
+scripts/
+test/
 
 # ===== 模型权重 / 密钥（绝不入库）=====
 *.pt

@@ -450,7 +450,8 @@ class CrossEncoderTrainer:
                 recall = tp / (tp + fn) if (tp + fn) > 0 else 0
                 f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
 
-                top_20_scores = sorted_tables[:20]
+                # Save the real top-K scores (not just top-20)
+                top_k_scores = sorted_tables[:top_k]
                 gt_scores = {t: table_scores[t] for t in true_tables if t in table_scores}
 
                 if idx < 3: 
@@ -469,21 +470,23 @@ class CrossEncoderTrainer:
                         non_gt_max = max(non_gt_scores)
                         overlap_count = sum(1 for s in non_gt_scores if s > gt_min)
 
+                # Build detailed_scores: real top-K only (no GT leakage)
                 detailed_scores = []
-                seen_tables = set()
-
-                for table, score in top_20_scores:
+                for table, score in top_k_scores:
                     detailed_scores.append([table, float(score)])
-                    seen_tables.add(table)
 
+                # Separately record GT table scores for analysis (not mixed into predictions)
+                gt_table_scores = []
+                top_k_set = set(t for t, s in top_k_scores)
                 for table in sorted(gt_scores.keys(), key=lambda t: gt_scores[t], reverse=True):
-                    if table not in seen_tables:
-                        detailed_scores.append([table, float(gt_scores[table])])
+                    if table not in top_k_set:
+                        gt_table_scores.append([table, float(gt_scores[table])])
 
                 result = {
                     'sample_id': idx,
                     'query': query,
                     'table_scores': detailed_scores,
+                    'gt_table_scores_outside_topk': gt_table_scores,
                     'threshold': None,
                     'top_k': top_k,
                     'selection_method': 'top_k',
