@@ -27,7 +27,7 @@ class LLMVerifier:
                  sample_rows: int = 10,
                  custom_prompts: Dict[str, str] = None,
                  prompt_template_path: str = None,
-                 base_url: str = "https://www.dmxapi.com/v1",
+                 base_url: str = "https://api.openai.com/v1",
                  test_mode: bool = False,
                  mock_mode: bool = False):
         """

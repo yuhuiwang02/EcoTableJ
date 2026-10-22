@@ -153,7 +153,7 @@ def parse_json_response(raw: str) -> dict:
 
 class LLMTableFilter:
 
-    def __init__(self, api_key, model="gpt-4o", base_url="https://www.dmxapi.com/v1"):
+    def __init__(self, api_key, model="gpt-4o", base_url="https://api.openai.com/v1"):
         self.client = openai.AsyncOpenAI(
             api_key=api_key,
             base_url=base_url

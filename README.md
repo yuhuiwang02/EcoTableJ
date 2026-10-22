@@ -30,7 +30,7 @@ Set the LLM API key before running LLM-based stages:
 export OPENAI_API_KEY="your-api-key"
 ```
 
-The default OpenAI-compatible endpoint and model settings are configured in `configs/default.json`. Update the configuration file if you need to use a different provider or model.
+The default endpoint is the official OpenAI API configured in `configs/default.json`. Update the configuration file only if you need to use a different provider or model.
 
 ## Main Experiment Reproduction
 

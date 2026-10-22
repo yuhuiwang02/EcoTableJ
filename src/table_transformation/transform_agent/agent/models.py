@@ -1,7 +1,7 @@
 """
 LLM API client for OpenAI-compatible endpoints.
 
-Uses https://www.dmxapi.com/v1 as the default base URL.
+Uses https://api.openai.com/v1 as the default base URL.
 Logs every call's prompt, response, token usage, cost, and latency.
 """
 
@@ -42,7 +42,7 @@ MODEL_PRICING = {
     "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
 }
 
-DEFAULT_BASE_URL = "https://www.dmxapi.com/v1"
+DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
 def _calculate_cost(model: str, input_tokens: int, output_tokens: int) -> tuple:
@@ -71,7 +71,7 @@ def call_llm(
         temperature: Sampling temperature
         max_tokens: Max output tokens
         top_p: Top-p sampling
-        base_url: API base URL (default: https://www.dmxapi.com/v1)
+        base_url: API base URL (default: https://api.openai.com/v1)
         api_key: API key (default: from OPENAI_API_KEY env var)
 
     Returns:

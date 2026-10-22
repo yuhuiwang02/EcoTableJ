@@ -118,7 +118,7 @@ async def run_llm_filter(
     column_info_dict: Dict[str, List[str]],
     api_key: str,
     model: str = "gpt-4o",
-    base_url: Optional[str] = "https://www.dmxapi.com/v1",
+    base_url: Optional[str] = "https://api.openai.com/v1",
     top_n_candidates: int = 30,
     concurrency: int = 10,
     resume_file: Optional[str] = None,
@@ -286,7 +286,7 @@ def run_cluster_validation(
     output_dir: str,
     api_key: str,
     model: str = "gpt-4o",
-    base_url: Optional[str] = "https://www.dmxapi.com/v1",
+    base_url: Optional[str] = "https://api.openai.com/v1",
     cluster_size: int = 5,
     max_iter: int = 10,
     max_workers: int = 5,
@@ -623,7 +623,7 @@ def build_config_from_args(args) -> Dict:
         cfg['llm_model'] = file_cfg.get('table_identification', {}).get(
             'llm_filter', {}).get('model', 'gpt-4o')
         cfg['llm_base_url'] = file_cfg.get('table_identification', {}).get(
-            'llm_filter', {}).get('base_url', 'https://www.dmxapi.com/v1')
+            'llm_filter', {}).get('base_url', 'https://api.openai.com/v1')
         cfg['top_k_paths'] = file_cfg.get('graph_validation', {}).get(
             'join_evaluation', {}).get('top_k_paths', 10)
         cfg['max_path_length'] = file_cfg.get('graph_validation', {}).get(

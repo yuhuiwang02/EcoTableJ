@@ -14,7 +14,7 @@ async def llm_filter_candidates(
     column_info: Dict[str, Dict[str, str]],
     api_key: str,
     model: str = "gpt-4o",
-    base_url: Optional[str] = "https://www.dmxapi.com/v1"
+    base_url: Optional[str] = "https://api.openai.com/v1"
 ) -> Dict:
     """
     Filter candidate tables using LLM (single query)
@@ -56,7 +56,7 @@ async def llm_filter_batch(
     column_info_list: List[Dict[str, Dict[str, str]]],
     api_key: str,
     model: str = "gpt-4o",
-    base_url: Optional[str] = "https://www.dmxapi.com/v1",
+    base_url: Optional[str] = "https://api.openai.com/v1",
     sleep_interval: float = 1.0,
     verbose: bool = True
 ) -> List[Dict]:
@@ -137,7 +137,7 @@ async def run_llm_filter_on_schema_results(
     column_stats_file: str,
     api_key: str,
     model: str = "gpt-4o",
-    base_url: Optional[str] = "https://www.dmxapi.com/v1",
+    base_url: Optional[str] = "https://api.openai.com/v1",
     top_n_candidates: int = 30,
     verbose: bool = True
 ) -> List[Dict]:
@@ -227,7 +227,7 @@ def run_llm_filter_sync(
     column_stats_file: str,
     api_key: str,
     model: str = "gpt-4o",
-    base_url: Optional[str] = "https://www.dmxapi.com/v1",
+    base_url: Optional[str] = "https://api.openai.com/v1",
     top_n_candidates: int = 30,
     verbose: bool = True
 ) -> List[Dict]:
