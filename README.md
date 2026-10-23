@@ -44,7 +44,6 @@ python -m src.pipeline_main \
   --schema_cache outputs/pipeline_results/step1_schema_linking_top30.json \
   --deepjoin_cache outputs/pipeline_results/step4_deepjoin_top6.json \
   --tables_dir data/benchmarks/NYC \
-  --ground_truth_csv data/training/stage2/trainDataForLayer2.csv \
   --gt_file data/benchmarks/NYC/schema_linking_gt_nyc.json \
   --output_dir outputs/pipeline_results \
   --llm_api_key "$OPENAI_API_KEY"
@@ -62,11 +61,13 @@ python -m src.pipeline_main \
   --schema_cache outputs/pipeline_results/step1_schema_linking_top30.json \
   --deepjoin_cache outputs/pipeline_results/step4_deepjoin_top6.json \
   --tables_dir data/benchmarks/NYC \
-  --ground_truth_csv data/training/stage2/trainDataForLayer2.csv \
+  --ground_truth_csv path/to/join_relationship_gt.csv \
   --gt_file data/benchmarks/NYC/schema_linking_gt_nyc.json \
   --output_dir outputs/pipeline_results_baseline \
   --llm_api_key "$OPENAI_API_KEY"
 ```
+
+This baseline requires a join-edge ground-truth CSV for evaluation. Do not use the graph-validation training CSV as this file.
 
 ### Cluster Size Ablation
 
@@ -79,7 +80,6 @@ python -m src.pipeline_main \
   --schema_cache outputs/pipeline_results/step1_schema_linking_top30.json \
   --deepjoin_cache outputs/pipeline_results/step4_deepjoin_top6.json \
   --tables_dir data/benchmarks/NYC \
-  --ground_truth_csv data/training/stage2/trainDataForLayer2.csv \
   --gt_file data/benchmarks/NYC/schema_linking_gt_nyc.json \
   --output_dir outputs/pipeline_results_r5 \
   --llm_api_key "$OPENAI_API_KEY"
@@ -98,7 +98,6 @@ python -m src.pipeline_main \
   --schema_cache outputs/pipeline_results/step1_schema_linking_top30.json \
   --deepjoin_cache outputs/pipeline_results/step4_deepjoin_top6.json \
   --tables_dir data/benchmarks/NYC \
-  --ground_truth_csv data/training/stage2/trainDataForLayer2.csv \
   --gt_file data/benchmarks/NYC/schema_linking_gt_nyc.json \
   --output_dir outputs/pipeline_results_transform \
   --llm_api_key "$OPENAI_API_KEY"

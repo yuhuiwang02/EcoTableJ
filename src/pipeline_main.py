@@ -487,6 +487,12 @@ async def run_pipeline(cfg: Dict) -> Dict:
     gt_csv = cfg.get('ground_truth_csv', '')
 
     if verification_method == 'per_edge':
+        if not gt_csv:
+            raise ValueError(
+                "--ground_truth_csv is required for per_edge evaluation. "
+                "Provide a join-edge ground-truth CSV; do not use the graph-validation training CSV."
+            )
+
         # EcoTable original: per-edge verification
         results, verified_edges = run_per_edge_validation(
             queries_raw, sparse_graph, json_data, edge_details,
@@ -692,13 +698,13 @@ Examples:
       --schema_cache outputs/pipeline_results/step1_schema_linking_top30.json \\
       --deepjoin_cache outputs/pipeline_results/step4_deepjoin_top6.json \\
       --tables_dir data/benchmarks/NYC \\
-      --ground_truth_csv data/training/stage2/trainDataForLayer2.csv \\
       --gt_file data/benchmarks/NYC/schema_linking_gt_nyc.json \\
       --llm_api_key "sk-xxx"
 
-  # EcoTable original (per-edge, no pruning)
+  # EcoTable original (per-edge, no pruning; requires join-edge GT for evaluation)
   python -m src.pipeline_main \\
       --verification_method per_edge --no_pruning \\
+      --ground_truth_csv path/to/join_relationship_gt.csv \\
       ...
 
   # EcoTable+ w/o pruning (cluster on complete graph)
@@ -720,8 +726,8 @@ Examples:
     parser.add_argument('--tables_dir', default='data/benchmarks/NYC',
                         help='Table data directory')
     parser.add_argument('--ground_truth_csv',
-                        default='data/training/stage2/trainDataForLayer2.csv',
-                        help='Ground truth CSV file')
+                        default='',
+                        help='Optional join-edge ground-truth CSV for per-edge evaluation')
     parser.add_argument('--gt_file',
                         default='data/benchmarks/NYC/schema_linking_gt_nyc.json',
                         help='Schema linking GT file (for name mapping)')

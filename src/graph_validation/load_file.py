@@ -15,11 +15,16 @@ def normalize_str(s):
         return str(s)
     return s.strip().replace('\\', '/')
 
+def _remove_csv_suffix(path):
+    """Remove a trailing .csv suffix from a normalized path."""
+    return path[:-4] if path.endswith('.csv') else path
+
 def extract_table_name(path):
-    """Extract table name from path (remove .csv extension)"""
-    table_name = normalize_str(path)
-    if table_name.endswith('.csv'):
-        table_name = table_name[:-4]
+    """Extract graph table name from plain, scope-relative, or full file path."""
+    table_name = _remove_csv_suffix(normalize_str(path))
+    parts = [p for p in table_name.split('/') if p]
+    if len(parts) >= 2:
+        return '/'.join(parts[-2:])
     return table_name
 
 
@@ -532,8 +537,9 @@ def load_ground_truth(csv_path, verbose=False):
 
     return base_table_names, gt_edges, dict(gt_edges_by_basetable)
 def extract_folder_name(path):
-    """Extract folder name from path"""
-    normalized = normalize_str(path)
-    if '/' in normalized:
-        return normalized.split('/')[0]
+    """Extract the parent scope name from plain, scope-relative, or full file path."""
+    normalized = _remove_csv_suffix(normalize_str(path))
+    parts = [p for p in normalized.split('/') if p]
+    if len(parts) >= 2:
+        return parts[-2]
     return None
